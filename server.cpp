@@ -27,6 +27,7 @@ struct packet {
 	string user;
 	string message;
 	time_t receive_time;
+	bool encrypted;
 };
 
 vector<user_info> users;
@@ -62,7 +63,7 @@ user_info* get_user(const string& username) {
 	return nullptr;
 }
 
-packet* add_packet(const string& msg) {
+packet* add_packet(const string& msg, const char& flag) {
 	if (total_packets_added >= max_packets) {
 		//PARKER, you can add a function call here to push everything to a json file.
 		//not sure if this conditional statement is right
@@ -76,7 +77,7 @@ packet* add_packet(const string& msg) {
 	
 	if (message.empty()) {
 		//cerr << "ERROR: message invalid!" << endl; //intended behavior since updates are with blank messages
-		intermediate_packet = {username, msg, receive_time}; //this is the worst possible way to do this. 
+		intermediate_packet = {username, msg, receive_time, false}; //this is the worst possible way to do this. 
 		return &intermediate_packet;
 	}
 	
@@ -84,8 +85,13 @@ packet* add_packet(const string& msg) {
 		packets.erase(packets.begin());
 	}
 	
-	packet new_packet = {username, message, receive_time};
+	packet new_packet;
 	
+	if (flag == '1') {
+		new_packet = {username, message, receive_time, true};
+	} else {
+		new_packet = {username, message, receive_time, false};
+	}
 	packets.push_back(new_packet);
 	
 	total_packets_added += 1; //iterator to see when you've fully looped through the vector
@@ -147,17 +153,26 @@ int main(int argc, char *argv[]) {
 	while (true) {
 				
 		int n = recvfrom(sock, buffer, sizeof(buffer) - 1, 0, (struct sockaddr *)&from, &fromlen);
-
+		
 		if (n < 0) {
 			cerr << "ERROR: problem receiving from socket!" << endl;
 			continue; //how to handle this? 
 		}
 		
+		if (n < 2) { 
+			cerr << "ERROR: message too short!" << endl;
+			continue;
+		}
+		
+		char flag = buffer[0]; //encryption flag 
+		
 		buffer[n] = '\0'; //null terminate string 
 		
         string received = buffer;
 		
-		packet* post = add_packet(received);
+		received = received.substr(1);
+		
+		packet* post = add_packet(received, flag);
 		
 		user_info* user = get_user(post->user);
 		
@@ -174,7 +189,13 @@ int main(int argc, char *argv[]) {
 		} else { //only send those that are new since last message or 
 			for (int i = 0; i < packets.size(); i++) {
 				if (user->last_received_time <= packets[i].receive_time && user->username != packets[i].user) {
-					string message = packets[i].user + ":" + packets[i].message;
+					string message;
+					if (packets[i].encrypted) {
+						message += '1';
+					} else {
+						message += '0';
+					}
+					message += packets[i].user + ":" + packets[i].message;
 					int sent = sendto(sock, message.c_str(), message.size(), 0, (struct sockaddr *)&from, fromlen);
 					if (sent < 0) { 
 						cerr << "ERROR: can't send packet!" << endl;
