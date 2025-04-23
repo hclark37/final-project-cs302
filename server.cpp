@@ -65,8 +65,18 @@ user_info* get_user(const string& username) {
 
 packet* add_packet(const string& msg, const char& flag) {
 	if (total_packets_added >= max_packets) {
-		//PARKER, you can add a function call here to push everything to a json file.
-		//not sure if this conditional statement is right
+		nlohmann::json jsonfile;
+        	ofstream fout;
+
+        	fout.open("savedPackets.json");
+        	for (size_t i = 0;i < packets.size();i++) {
+            		string jf = "Packet " + to_string(i);
+            		jsonfile[jf] = {{"user", packets[i].user}, {"message", packets[i].message}, {"receive time", packets[i].receive_time}};
+        	}
+       		fout << jsonfile;
+        	fout.close();
+        	packets.clear();
+		
 		total_packets_added = 0;
 	}
 	
@@ -105,9 +115,17 @@ int sock;
 void signal_handler(int signum) {
 	cout << endl << "Received SIGINT (Ctrl + C). Saving messages..." << endl;
 	
-	//parker, this is another place where you're gonna run your save to json part. 
-	//you're only going to want to save the ones since the last save in the program. you'll have to do the math on that
-	//based upon the total_packets_added part of the code
+	nlohmann::json jsonfile;
+        ofstream fout;
+	
+        fout.open("savedPackets.json");
+        for (size_t i = 0;i < packets.size();i++) {
+            	string jf = "Packet " + to_string(i);
+            	jsonfile[jf] = {{"user", packets[i].user}, {"message", packets[i].message}, {"receive time", packets[i].receive_time}};
+        }
+       	fout << jsonfile;
+        fout.close();
+        packets.clear();
 	
 	close(sock);
 	
