@@ -9,6 +9,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <csignal> // for clean killing it with ctrl + c
+#include <fstream>
+#include <deque>
+#include "json.hpp"
+//https://github.com/nlohmann/json
+using json = nlohmann::json;
 
 // https://www.linuxhowtos.org/C_C++/socket.htm
 
@@ -33,6 +38,9 @@ struct packet {
 vector<user_info> users;
 vector<packet> packets;
 packet intermediate_packet;
+
+const string end_msg = "END";
+
 
 void split_string(const string& received, string &username, string& message) {
 	for (size_t i = 0; i < received.length(); i++) {
@@ -64,22 +72,6 @@ user_info* get_user(const string& username) {
 }
 
 packet* add_packet(const string& msg, const char& flag) {
-	if (total_packets_added >= max_packets) {
-		nlohmann::json jsonfile;
-        	ofstream fout;
-
-        	fout.open("savedPackets.json");
-        	for (size_t i = 0;i < packets.size();i++) {
-            		string jf = "Packet " + to_string(i);
-            		jsonfile[jf] = {{"user", packets[i].user}, {"message", packets[i].message}, {"receive time", packets[i].receive_time}};
-        	}
-       		fout << jsonfile;
-        	fout.close();
-        	packets.clear();
-		
-		total_packets_added = 0;
-	}
-	
 	string username, message; 
 	time_t receive_time = time(NULL);
 	
@@ -102,9 +94,26 @@ packet* add_packet(const string& msg, const char& flag) {
 	} else {
 		new_packet = {username, message, receive_time, false};
 	}
+	
 	packets.push_back(new_packet);
 	
 	total_packets_added += 1; //iterator to see when you've fully looped through the vector
+	
+	ofstream f("log.json", std::ios::app);
+	
+	json j;
+	
+	j["user"] = new_packet.user;
+	
+	j["message"] = new_packet.message;
+	
+	j["receive_time"] = new_packet.receive_time;
+	
+	j["encrypted"] = new_packet.encrypted;
+	
+	f << j << endl;
+	
+	f.close();
 	
 	return &packets.back();
 }
@@ -114,18 +123,6 @@ int sock;
 //https://www.tutorialspoint.com/cplusplus/cpp_signal_handling.htm 
 void signal_handler(int signum) {
 	cout << endl << "Received SIGINT (Ctrl + C). Saving messages..." << endl;
-	
-	nlohmann::json jsonfile;
-        ofstream fout;
-	
-        fout.open("savedPackets.json");
-        for (size_t i = 0;i < packets.size();i++) {
-            	string jf = "Packet " + to_string(i);
-            	jsonfile[jf] = {{"user", packets[i].user}, {"message", packets[i].message}, {"receive time", packets[i].receive_time}};
-        }
-       	fout << jsonfile;
-        fout.close();
-        packets.clear();
 	
 	close(sock);
 	
@@ -166,7 +163,75 @@ int main(int argc, char *argv[]) {
 	
 	char buffer[1024];
 
-	const string end_msg = "END";
+	ifstream f("log.json");
+	
+	
+	if (f) {
+		string line;
+		deque<string> lines;
+
+		while(getline(f, line)) {
+			lines.push_back(line);
+			//if (lines.size() > 100) {
+			//	lines.pop_front();
+			//}
+		}
+		
+		for (int i = 0; i < lines.size(); i++) {
+			json j = json::parse(lines[i]);
+			
+			string user;
+			string message; 
+			time_t receive_time; 
+			bool encrypted;
+			
+			for (json::iterator it = j.begin(); it != j.end(); ++it) {
+				string key = it.key();
+				string value = it.value().dump();
+				
+				if (key == "user") {
+					user = value.substr(1, value.length() - 2);
+				} else if (key == "message") {
+					message = value.substr(1, value.length() - 2);
+				} else if (key == "receive_time") {
+					int time = stoi(value);
+					receive_time = time;
+				} else if (key == "encrypted") {
+					if (value == "false") {
+						encrypted = false;
+					} else {
+						encrypted = true;
+					}
+				}
+			}
+			
+			
+			packet new_packet = {user, message, receive_time, encrypted};
+			packets.push_back(new_packet);
+			
+			struct tm *time_info = localtime(&receive_time);
+		
+			char time_string[80];
+
+			strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", time_info);
+
+			cout << "[" << time_string << "] " << user << ": " << message << endl;
+		}
+		
+		
+		
+	} else {
+		cout << "Log file does not exist. Creating it..." << endl;
+		ofstream outf("log.json");
+		if (outf) {
+			outf << "";
+			outf.close();
+		} else {
+			cerr << "ERROR: cannot create log file!" << endl;
+		}
+	}
+	
+	f.close();
 
 	while (true) {
 				
@@ -192,9 +257,15 @@ int main(int argc, char *argv[]) {
 		
 		packet* post = add_packet(received, flag);
 		
+		struct tm *time_info = localtime(&post->receive_time);
+		
+		char time_string[80];
+
+		strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", time_info);
+
 		user_info* user = get_user(post->user);
 		
-		cout << "Datagram received: " << received << endl;
+		cout << "[" << time_string << "] " << post->user << ": " << post->message << endl;
 		
 		if (user == nullptr) { //send all if undefined user 
 			//cout << "User is nullptr!" << endl; // debug 
@@ -213,7 +284,9 @@ int main(int argc, char *argv[]) {
 					} else {
 						message += '0';
 					}
+					
 					message += packets[i].user + ":" + packets[i].message;
+					
 					int sent = sendto(sock, message.c_str(), message.size(), 0, (struct sockaddr *)&from, fromlen);
 					if (sent < 0) { 
 						cerr << "ERROR: can't send packet!" << endl;
