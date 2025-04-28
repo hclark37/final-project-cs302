@@ -7,31 +7,44 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+#include <vector>
 
 //https://github.com/elidill653/RC4-Stream-Cipher/blob/master/RC4%20-Stream-Cipher.cpp
 
 using namespace std;
 
-string encrypt(string& input, string& password) {
-	return input;
+//https://medium.com/@amit.kulkarni/encrypting-decrypting-a-file-using-openssl-evp-b26e0e4d28d4
+//https://kolinsturt.github.io/lessons/2011/11/15/aes-encryption-using-openssl
+//https://r00m.wordpress.com/2010/09/11/simple-xor-encryption-in-cpp/
+string encrypt(const string& input, const string& password) {
+	//uint_8 are unsigned char - needed for this 
+	vector<uint8_t> data(input.begin(), input.end());
+	vector<uint8_t> key(data.size());
+	
+	const uint8_t salt[] = {'a', 'b', 'c', 'd'};
+	
+	//makes your key legit 
+	PKCS5_PBKDF2_HMAC(password.c_str(), password.size(), salt, sizeof(salt), 1000, EVP_sha512(), key.size(), key.data());
+	
+	for (size_t i = 0; i < data.size(); ++i) {
+        data[i] ^= key[i];
+    }
+	
+	return string(data.begin(), data.end());
 }
 
-string decrypt(string& input, string& password) {
-	return input;
-}
+void split_string(const string& received, time_t &time, string &username, string& message) {
+	size_t first_colon = received.find(':');
+	
+	time = atoi(received.substr(0, first_colon).c_str());
+	
+	size_t second_colon = received.find(':', first_colon + 1);
 
-void split_string(const string& received, string &username, string& message) {
-	for (size_t i = 0; i < received.length(); i++) {
-		if (received[i] == ':') {
-			username = received.substr(0, i);
-			message = received.substr(i + 1);
-			return;
-		}
-	}
+	username = received.substr(first_colon + 1, second_colon - first_colon - 1);
 	
-	message = received; // fallback 
-	
-	cerr << "ERROR: invalid message format!" << endl;
+	message = received.substr(second_colon + 1);
 }
 
 
@@ -41,10 +54,11 @@ int main(int argc, char *argv[]) {
         cerr << "Usage: " << argv[0] << " <server> <port> <username> (optional)<password>" << endl;
         return 1;
     }
+	
 	string password = "";
 	
 	if (argc == 5) {
-		string password = argv[4];
+		password = argv[4];
 	}
 	
     string server_name = argv[1];
@@ -85,7 +99,6 @@ int main(int argc, char *argv[]) {
 		if (!message_content.empty()) {
 			if (message_content[0] == '%') {
 				encryption_flag = '1';
-				message_content = message_content.substr(1);
 			}
 		}
 		
@@ -127,19 +140,33 @@ int main(int argc, char *argv[]) {
 			response = response.substr(1);
 			
             string username, message;
-				
-			split_string(response, username, message);
-				
-			if (username.empty()) {
+			
+			time_t time;
+			
+			split_string(response, time, username, message);
+			
+			struct tm *time_info = localtime(&time);
+		
+			char time_string[80];
+
+			strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", time_info);
+
+			if (username.empty()) { //shouldn't be possible but you never know ! 
 				username = "Anonymous";
 			}
+			
 			if (flag == '1' && argc == 5) {
-				message = decrypt(message, password);
+				message = encrypt(message, password);
+				if (message[0] != '%') {
+					message = "<Encrypted message>";
+				} else {
+					message = message.substr(1);
+				}
 			} else if (flag == '1') {
 				message = "<Encrypted message>";
 			} 
-				
-			cout << "Received: " << username << ": " << message << endl;
+			
+			cout << "[" << time_string << "] " << username << ": " << message << endl;
 			
         }
     }
