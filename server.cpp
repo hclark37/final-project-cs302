@@ -42,6 +42,7 @@ packet intermediate_packet;
 const string end_msg = "END";
 
 void split_string(const string& received, string &username, string& message) {
+	//split the message between the two : ; i don't know why i didn't use .find(). 
 	for (size_t i = 0; i < received.length(); i++) {
 		if (received[i] == ':') {
 			username = received.substr(0, i);
@@ -50,18 +51,20 @@ void split_string(const string& received, string &username, string& message) {
 		}
 	}
 	
+	//if no user - i guess if somebody sent a super malformed packet by a custom client 
 	message = received; // fallback 
 	
 	cerr << "ERROR: invalid message format!" << endl;
 }
 
 user_info* get_user(const string& username) {
+	// search through users and return its struct if found 
 	for (int i = 0; i < users.size(); i++) {
 		if (users[i].username == username) {
 			return &users[i];
 		}
 	}
-	
+	//add if doesnt exist 
 	if (users.size() < max_users) {
 		users.push_back({username, 0}); // should this set the time value?
 		return &users.back();
@@ -72,16 +75,19 @@ user_info* get_user(const string& username) {
 
 packet* add_packet(const string& msg, const char& flag) {
 	string username, message; 
+	//current time 
 	time_t receive_time = time(NULL);
-	
+	//split up the message to its parts 
 	split_string(msg, username, message);
 	
+	//if the message is empty, return a temporary packet because we won't be saving it. 
 	if (message.empty()) {
 		//cerr << "ERROR: message invalid!" << endl; //intended behavior since updates are with blank messages
-		intermediate_packet = {username, msg, receive_time, false}; //this is the worst possible way to do this. 
+		intermediate_packet = {username, msg, receive_time, false}; //this is the worst possible way to do this. global variable  
 		return &intermediate_packet;
 	}
 	
+	//packet replacement - there's a big queue of packets with a max size 
 	if (packets.size() == max_packets) {
 		packets.erase(packets.begin());
 	}
@@ -99,10 +105,11 @@ packet* add_packet(const string& msg, const char& flag) {
 	total_packets_added += 1; //iterator to see when you've fully looped through the vector
 	//the encrypted messages aren't utf-8 so they make it crash so instead of trying to find a fix i'm just making them not get pushed to json. sorry not sorry!
 	if (!new_packet.encrypted) {
+		//open the file 
 		ofstream f("log.json", std::ios::app);
-	
+		
 		json j;
-	
+		//plug in values 
 		j["user"] = new_packet.user;
 	
 		j["message"] = new_packet.message;
@@ -111,6 +118,7 @@ packet* add_packet(const string& msg, const char& flag) {
 	
 		j["encrypted"] = new_packet.encrypted;
 	
+		//push json to file 
 		f << j << endl;
 	
 		f.close();
@@ -119,7 +127,7 @@ packet* add_packet(const string& msg, const char& flag) {
 	return &packets.back();
 }
 
-int sock;
+int sock; //because it needs to be available in the signal handler 
 
 //https://www.tutorialspoint.com/cplusplus/cpp_signal_handling.htm 
 // this isn't really useful as i thought it would be 
@@ -170,22 +178,23 @@ int main(int argc, char *argv[]) {
 	if (f) {
 		string line;
 		deque<string> lines;
-
+		//grab all the lines of the file 
 		while(getline(f, line)) {
 			lines.push_back(line);
 			//if (lines.size() > 100) {
 			//	lines.pop_front();
 			//}
 		}
-		
+
 		for (int i = 0; i < lines.size(); i++) {
+			//take the line as a json 
 			json j = json::parse(lines[i]);
 			
 			string user;
 			string message; 
 			time_t receive_time; 
 			bool encrypted;
-			
+			//go through the json and grab all the values 
 			for (json::iterator it = j.begin(); it != j.end(); ++it) {
 				string key = it.key();
 				string value = it.value().dump();
@@ -193,11 +202,14 @@ int main(int argc, char *argv[]) {
 				if (key == "user") {
 					user = value.substr(1, value.length() - 2);
 				} else if (key == "message") {
+					//for some reason you have to take a substring because they love to add "quotation marks to both sides like this" for no perceptable reason 
 					message = value.substr(1, value.length() - 2);
 				} else if (key == "receive_time") {
 					int time = stoi(value);
 					receive_time = time;
 				} else if (key == "encrypted") {
+					//this line is totally unnecessary bcause it will always be false because i wrote an exception above to prevent encrypted to being pushed because otherwise it crashes. 
+					//just letting you know. 
 					if (value == "false") {
 						encrypted = false;
 					} else {
@@ -206,16 +218,17 @@ int main(int argc, char *argv[]) {
 				}
 			}
 			
-			
+			//add the packets-  you don't have to worry about the age of the messages from the file because of the way they're added in this method 
 			packet new_packet = {user, message, receive_time, encrypted};
 			packets.push_back(new_packet);
 			
+			//turn into readalbe time - the documentation for this is somewhere in the code 
 			struct tm *time_info = localtime(&receive_time);
 		
 			char time_string[80];
 
 			strftime(time_string, sizeof(time_string), "%Y-%m-%d %H:%M:%S", time_info);
-
+			//print the previous messages 
 			cout << "[" << time_string << "] " << user << ": " << message << endl;
 		}
 		
@@ -254,8 +267,10 @@ int main(int argc, char *argv[]) {
 		
         string received = buffer;
 		
+		//remove the flag from message string 
 		received = received.substr(1);
 		
+		//convert to time string 
 		packet* post = add_packet(received, flag);
 		
 		struct tm *time_info = localtime(&post->receive_time);
@@ -266,27 +281,20 @@ int main(int argc, char *argv[]) {
 
 		user_info* user = get_user(post->user);
 		
+		//output message 
 		cout << "[" << time_string << "] " << post->user << ": " << post->message << endl;
-		
-		if (user == nullptr) { //send all if undefined user 
-			//cout << "User is nullptr!" << endl; // debug 
-			//this code might be totally dysfunctional im not sure 
-			for (int i = 0; i < packets.size(); i++) {
-				int sent = sendto(sock, packets[i].message.c_str(), packets[i].message.size(), 0, (struct sockaddr *)&from, fromlen);
-				if (sent < 0) { 
-					cerr << "ERROR: can't send packet!" << endl;
-				}
-			}
-		} else { //only send those that are new since last message or 
+		//i didn't wanna fix the indentation that's why there's this if statement 
+		if (true) { //only send those that are new since last message or 
 			for (int i = 0; i < packets.size(); i++) {
 				if (user->last_received_time <= packets[i].receive_time && user->username != packets[i].user) {
 					string message = "";
+					//set flag 
 					if (packets[i].encrypted) {
 						message += '1';
 					} else {
 						message += '0';
 					}
-					
+					// create message
 					message += to_string(packets[i].receive_time) + ":" + packets[i].user + ":" + packets[i].message;
 					
 					int sent = sendto(sock, message.c_str(), message.size(), 0, (struct sockaddr *)&from, fromlen);
@@ -298,11 +306,13 @@ int main(int argc, char *argv[]) {
 		}
 		
 		if (user == nullptr) {
-			
+			//shouldn't happen 
 		} else {
+			//update last post time 
 			user->last_received_time = post->receive_time;
 		}
 		
+		//send end message 
 		int sent = sendto(sock, end_msg.c_str(), end_msg.size(), 0, (struct sockaddr *)&from, fromlen);
 		
 		if (sent < 0) {
