@@ -66,6 +66,12 @@ int main(int argc, char *argv[]) {
     int port = atoi(argv[2]);
     
 	string username = argv[3];
+	
+	for (int i = 0; i < username.size(); i++) {
+		if (username[i] == ':') {
+			username[i] = '#';
+		}
+	}
 
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
 	
