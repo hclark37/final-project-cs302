@@ -37,7 +37,7 @@ string encrypt(const string& input, const string& password) {
 
 void split_string(const string& received, time_t &time, string &username, string& message) {
 	size_t first_colon = received.find(':');
-	
+	//get time variable and set it since its passed by reference; atoi to turn from string to number 
 	time = atoi(received.substr(0, first_colon).c_str());
 	
 	size_t second_colon = received.find(':', first_colon + 1);
@@ -67,6 +67,7 @@ int main(int argc, char *argv[]) {
     
 	string username = argv[3];
 	
+	//you can mess stuff up if you have : in the username, so this just prevents that 
 	for (int i = 0; i < username.size(); i++) {
 		if (username[i] == ':') {
 			username[i] = '#';
@@ -108,14 +109,18 @@ int main(int argc, char *argv[]) {
 			}
 		}
 		
+		//check to see if the message is encrypted 
 		if (encryption_flag == '1' && argc == 5) {
+			//encryption function is symmetrical so it works both ways 
 			message_content = encrypt(message_content, password);
 		} else if (encryption_flag == '1') {
 			cerr << "ERROR: can't encrypt without password!" << endl;
 		}
 		
+		//compose of form username:password 
 		string full_message = encryption_flag + username + ":" + message_content;
 		
+		//send message 
         int n = sendto(sock, full_message.c_str(), full_message.length(), 0, (struct sockaddr *)&server_addr, server_len);
 		
 		if (n < 0) {
@@ -133,24 +138,31 @@ int main(int argc, char *argv[]) {
 				return 1;
 			}
             
+			//form the end of the string 
 			buffer[n] = '\0';  
 			
 			string response = buffer;
 			
+			//end message is what denotes when server is done 
+			//probably should write an exception for like, time- if the client isn't getting anything back 
 			if (response.empty() || response == "END") {
                 break;
 			}
 			
 			char flag = buffer[0]; //encryption flag 
 			
+			//remove the encryption flag from the string 
 			response = response.substr(1);
 			
             string username, message;
 			
 			time_t time;
 			
+			//server returns in form time_t:user:message 
 			split_string(response, time, username, message);
 			
+			//this is just for converting to string time 
+			//https://stackoverflow.com/questions/997512/string-representation-of-time-t
 			struct tm *time_info = localtime(&time);
 		
 			char time_string[80];
@@ -161,8 +173,10 @@ int main(int argc, char *argv[]) {
 				username = "Anonymous";
 			}
 			
+			//if encrypted and has password 
 			if (flag == '1' && argc == 5) {
 				message = encrypt(message, password);
+				//check to see if decrypted correctly, should be in form "%message" when decrypted, if there isnt a %, it's not decrypted 
 				if (message[0] != '%') {
 					message = "<Encrypted message>";
 				} else {
@@ -171,9 +185,8 @@ int main(int argc, char *argv[]) {
 			} else if (flag == '1') {
 				message = "<Encrypted message>";
 			} 
-			
+			//output message 
 			cout << "[" << time_string << "] " << username << ": " << message << endl;
-			
         }
     }
 
