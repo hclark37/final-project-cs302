@@ -41,7 +41,6 @@ packet intermediate_packet;
 
 const string end_msg = "END";
 
-
 void split_string(const string& received, string &username, string& message) {
 	for (size_t i = 0; i < received.length(); i++) {
 		if (received[i] == ':') {
@@ -98,22 +97,24 @@ packet* add_packet(const string& msg, const char& flag) {
 	packets.push_back(new_packet);
 	
 	total_packets_added += 1; //iterator to see when you've fully looped through the vector
+	//the encrypted messages aren't utf-8 so they make it crash so instead of trying to find a fix i'm just making them not get pushed to json. sorry not sorry!
+	if (!new_packet.encrypted) {
+		ofstream f("log.json", std::ios::app);
 	
-	ofstream f("log.json", std::ios::app);
+		json j;
 	
-	json j;
+		j["user"] = new_packet.user;
 	
-	j["user"] = new_packet.user;
+		j["message"] = new_packet.message;
 	
-	j["message"] = new_packet.message;
+		j["receive_time"] = new_packet.receive_time;
 	
-	j["receive_time"] = new_packet.receive_time;
+		j["encrypted"] = new_packet.encrypted;
 	
-	j["encrypted"] = new_packet.encrypted;
+		f << j << endl;
 	
-	f << j << endl;
-	
-	f.close();
+		f.close();
+	}
 	
 	return &packets.back();
 }
@@ -121,8 +122,9 @@ packet* add_packet(const string& msg, const char& flag) {
 int sock;
 
 //https://www.tutorialspoint.com/cplusplus/cpp_signal_handling.htm 
+// this isn't really useful as i thought it would be 
 void signal_handler(int signum) {
-	cout << endl << "Received SIGINT (Ctrl + C). Saving messages..." << endl;
+	cout << endl << "Received SIGINT (Ctrl + C). Closing the program..." << endl;
 	
 	close(sock);
 	
@@ -164,7 +166,6 @@ int main(int argc, char *argv[]) {
 	char buffer[1024];
 
 	ifstream f("log.json");
-	
 	
 	if (f) {
 		string line;
@@ -269,6 +270,7 @@ int main(int argc, char *argv[]) {
 		
 		if (user == nullptr) { //send all if undefined user 
 			//cout << "User is nullptr!" << endl; // debug 
+			//this code might be totally dysfunctional im not sure 
 			for (int i = 0; i < packets.size(); i++) {
 				int sent = sendto(sock, packets[i].message.c_str(), packets[i].message.size(), 0, (struct sockaddr *)&from, fromlen);
 				if (sent < 0) { 
@@ -278,14 +280,14 @@ int main(int argc, char *argv[]) {
 		} else { //only send those that are new since last message or 
 			for (int i = 0; i < packets.size(); i++) {
 				if (user->last_received_time <= packets[i].receive_time && user->username != packets[i].user) {
-					string message;
+					string message = "";
 					if (packets[i].encrypted) {
 						message += '1';
 					} else {
 						message += '0';
 					}
 					
-					message += packets[i].user + ":" + packets[i].message;
+					message += to_string(packets[i].receive_time) + ":" + packets[i].user + ":" + packets[i].message;
 					
 					int sent = sendto(sock, message.c_str(), message.size(), 0, (struct sockaddr *)&from, fromlen);
 					if (sent < 0) { 
