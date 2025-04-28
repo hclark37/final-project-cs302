@@ -115,6 +115,7 @@ int main(int argc, char *argv[]) {
 			message_content = encrypt(message_content, password);
 		} else if (encryption_flag == '1') {
 			cerr << "ERROR: can't encrypt without password!" << endl;
+			continue;
 		}
 		
 		//compose of form username:password 
