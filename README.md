@@ -5,6 +5,9 @@ The clients are able to log in with a username and an optional password, which w
 This chatroom can allow for easy communication between clients on the same localhost.
 This project was inspired by vim's messaging system on the hydra/tesla machines. 
 
+To run: 
+install client.cpp, server.cpp, json.hpp
+
 To compile client:
 g++ ./client.cpp -o client -lssl -lcrypto
 To compile server
