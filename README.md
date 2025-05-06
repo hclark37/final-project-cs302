@@ -17,9 +17,6 @@ Json Nlohmann Library,
 Openssl Library,
 Berkeley Sockets API
 
-To run: 
-install client.cpp, server.cpp, json.hpp
-
 To compile client:
 g++ ./client.cpp -o client -lssl -lcrypto
 To compile server
