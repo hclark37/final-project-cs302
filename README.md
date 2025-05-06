@@ -11,6 +11,12 @@ With the optional password, messages can be encrypted with a 8-byte sha512 encry
 Messages are limited to 1024 characters, or 256 when encrypted.
 Messages are recieved to the client from the server when the client sends a message, including a blank message of which will not be recieved by the server.
 
+Libraries Used:   
+C++ Standard Library, 
+Json Nlohmann Library,
+Openssl Library,
+Berkeley Sockets API
+
 To run: 
 install client.cpp, server.cpp, json.hpp
 
